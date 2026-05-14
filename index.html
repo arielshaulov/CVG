@@ -1,0 +1,1932 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>
+			CVG: Compositional Video Generation via Inference-Time Guidance
+		</title>
+
+		<link rel="preconnect" href="https://fonts.googleapis.com" />
+		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+		<link
+			href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;700;800&display=swap"
+			rel="stylesheet" />
+
+		<!-- MathJax Configuration -->
+		<script>
+			window.MathJax = {
+				tex: {
+					inlineMath: [
+						["$", "$"],
+						["\\(", "\\)"],
+					],
+				},
+			};
+		</script>
+		<script
+			id="MathJax-script"
+			async
+			src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+
+		<style>
+			:root {
+				/* Palette: Precision Engineering */
+				--primary-text: #0f172a; /* Slate 900 */
+				--secondary-text: #475569; /* Slate 600 */
+				--accent-orange: #ff5722; /* International Orange */
+				--accent-orange-hover: #e64a19;
+				--bg-color: #ffffff;
+				--grid-line: #edf1f6; /* Slate 200 */
+				--panel-bg: #ffffff;
+				--terminal-bg: #f1f5f9; /* Slate 100 */
+				--border-color: #cbd5e1; /* Slate 300 */
+
+				/* Shadows & Radius */
+				--shadow-soft:
+					0 4px 6px -1px rgba(0, 0, 0, 0.05),
+					0 2px 4px -1px rgba(0, 0, 0, 0.03);
+				--shadow-lifted:
+					0 20px 25px -5px rgba(0, 0, 0, 0.05),
+					0 10px 10px -5px rgba(0, 0, 0, 0.01);
+				--radius-sm: 6px;
+				--radius-md: 12px;
+				--radius-lg: 16px;
+			}
+
+			body {
+				font-family: "Plus Jakarta Sans", sans-serif;
+				background-color: var(--bg-color);
+				color: var(--primary-text);
+				line-height: 1.6;
+				margin: 0;
+				padding: 0;
+
+				/* Technical Grid Background */
+				background-image:
+					linear-gradient(var(--grid-line) 1px, transparent 1px),
+					linear-gradient(
+						to right,
+						var(--grid-line) 1px,
+						transparent 1px
+					);
+				background-size: 40px 40px;
+				background-position: center top;
+			}
+
+			html {
+				scroll-behavior: smooth;
+			}
+
+			/* Overlay to fade grid at bottom */
+			body::after {
+				content: "";
+				position: fixed;
+				bottom: 0;
+				left: 0;
+				right: 0;
+				height: 100px;
+				background: linear-gradient(
+					to top,
+					var(--bg-color),
+					transparent
+				);
+				pointer-events: none;
+				z-index: -1;
+			}
+
+			/* --- Custom Scrollbar (Overlay look) --- */
+			::-webkit-scrollbar {
+				width: 8px;
+				background: transparent; /* Makes track transparent */
+			}
+
+			::-webkit-scrollbar-track {
+				background: transparent;
+			}
+
+			::-webkit-scrollbar-thumb {
+				background-color: rgba(15, 23, 42, 0.3);
+				border-radius: 4px;
+				border: 2px solid transparent; /* padding around thumb */
+				background-clip: content-box;
+			}
+
+			::-webkit-scrollbar-thumb:hover {
+				background-color: rgba(15, 23, 42, 0.6);
+			}
+
+			.container {
+				max-width: 1200px; /* Wider to fit trio of videos comfortably */
+				margin: 0 auto;
+				padding: 30px 20px; /* Reduced padding */
+			}
+
+			/* --- Header Section --- */
+			header {
+				text-align: center;
+				margin-bottom: 40px; /* Reduced from 70px */
+				position: relative;
+			}
+
+			h1 {
+				font-size: 3rem;
+				font-weight: 800;
+				letter-spacing: -0.03em;
+				color: var(--primary-text);
+				margin-bottom: 15px;
+				line-height: 1.1;
+			}
+
+			.authors {
+				font-family:
+					"Plus Jakarta Sans", sans-serif; /* Switch to main font for names */
+				font-size: 1.1rem;
+				color: var(--primary-text);
+				background: transparent;
+				display: block;
+				padding: 0;
+				border: none;
+				margin-bottom: 8px;
+				font-weight: 600;
+			}
+
+			.author-name {
+				display: inline-block;
+				margin: 0 4px;
+			}
+
+			.author-name a {
+				color: inherit;
+				text-decoration: none;
+				transition: color 0.2s ease;
+			}
+
+			.author-name a:hover {
+				color: var(--accent-orange);
+				text-decoration: underline;
+			}
+
+			.affiliations {
+				font-family:
+					"JetBrains Mono", monospace; /* Keep mono for affils */
+				font-size: 0.9rem;
+				color: var(--secondary-text);
+				display: flex;
+				justify-content: center;
+				flex-wrap: wrap;
+				gap: 16px;
+				margin-bottom: 20px;
+			}
+
+			.affiliation {
+				display: inline-block;
+			}
+
+			.links {
+				display: flex;
+				justify-content: center;
+				gap: 12px;
+				margin-top: 25px;
+			}
+
+			.btn {
+				background-color: white;
+				color: var(--primary-text);
+				padding: 10px 24px;
+				border-radius: 999px; /* Pill shape */
+				text-decoration: none;
+				font-weight: 600;
+				font-size: 0.9rem;
+				border: 1px solid var(--border-color);
+				box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+				transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+				display: inline-flex;
+				align-items: center;
+			}
+
+			.btn:hover {
+				background-color: var(--primary-text);
+				color: white;
+				border-color: var(--primary-text);
+				transform: translateY(-2px);
+				box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+			}
+
+			/* --- Internal Navigation --- */
+			/* --- Internal Navigation (Floating Right) --- */
+			.internal-nav {
+				position: fixed;
+				right: 20px;
+				top: 50%;
+				transform: translateY(-50%);
+				display: flex;
+				flex-direction: column;
+				gap: 12px;
+				padding: 0;
+				background: transparent;
+				border: none;
+				box-shadow: none;
+				z-index: 9;
+			}
+
+			.nav-link {
+				text-decoration: none;
+				color: var(--secondary-text);
+				font-weight: 600;
+				font-size: 0.9rem;
+				padding: 10px 20px;
+				background: white;
+				border: 1px solid var(--border-color);
+				border-radius: var(--radius-md); /* Pill/Rounded Rectangle */
+				box-shadow: var(--shadow-soft);
+				transition: all 0.2s ease;
+				text-align: center; /* Centered text */
+				white-space: nowrap;
+			}
+
+			.nav-link:hover {
+				color: white;
+				background: var(--accent-orange);
+				border-color: var(--accent-orange);
+				transform: translateX(-5px); /* Slide left slightly on hover */
+				box-shadow: 0 4px 12px rgba(255, 87, 34, 0.3);
+			}
+
+			/* Remove old underline styles */
+			.nav-link::after {
+				content: none;
+			}
+
+			/* Hamburger Button (hidden by default; shown on small screens) */
+			.hamburger-btn {
+				display: none;
+			}
+
+			/* Small Screens: Hamburger reveals the floating pill nav */
+			@media (max-width: 1599px) {
+				.hamburger-btn {
+					display: flex;
+					position: fixed;
+					top: 20px;
+					right: 20px;
+					width: 44px;
+					height: 44px;
+					background: white;
+					border: 1px solid var(--border-color);
+					border-radius: var(--radius-md);
+					box-shadow: var(--shadow-soft);
+					cursor: pointer;
+					z-index: 101;
+					padding: 0;
+					flex-direction: column;
+					align-items: center;
+					justify-content: center;
+					gap: 5px;
+				}
+
+				.hamburger-btn span {
+					display: block;
+					width: 20px;
+					height: 2px;
+					background: var(--primary-text);
+					border-radius: 1px;
+					transition:
+						transform 0.3s ease,
+						opacity 0.3s ease;
+				}
+
+				body.nav-open .hamburger-btn span:nth-child(1) {
+					transform: translateY(7px) rotate(45deg);
+				}
+				body.nav-open .hamburger-btn span:nth-child(2) {
+					opacity: 0;
+				}
+				body.nav-open .hamburger-btn span:nth-child(3) {
+					transform: translateY(-7px) rotate(-45deg);
+				}
+
+				/* Floating pill nav anchored just below the hamburger.
+				   Hidden off-screen until the menu is opened. */
+				.internal-nav {
+					position: fixed;
+					top: 76px; /* 20px (hamburger top) + 44px (height) + 12px gap */
+					right: 20px;
+					transform: translateX(calc(100% + 40px));
+					display: flex;
+					flex-direction: column;
+					gap: 12px;
+					margin: 0;
+					padding: 0;
+					background: transparent;
+					border: none;
+					box-shadow: none;
+					width: auto;
+					height: auto;
+					transition: transform 0.3s ease;
+					z-index: 9;
+				}
+
+				body.nav-open .internal-nav {
+					transform: translateX(0);
+				}
+
+				.container {
+					transition: transform 0.3s ease;
+				}
+
+				/* Shift up to 140px left, but clamp so the page keeps
+				   at least ~3% breathing room from the left viewport edge. */
+				body.nav-open .container {
+					transform: translateX(
+						clamp(-140px, calc(600px - 47vw), 0px)
+					);
+				}
+			}
+
+			/* --- Abstract Section (Technical Card) --- */
+			.abstract-section {
+				background-color: white;
+				padding: 30px; /* Reduced from 40px */
+				border-radius: var(--radius-lg);
+				margin-bottom: 50px; /* Reduced from 80px */
+				text-align: justify;
+				margin-left: auto;
+				margin-right: auto;
+
+				/* Card Styling */
+				border: 1px solid var(--border-color);
+				box-shadow: var(--shadow-soft);
+				position: relative;
+				overflow: hidden;
+			}
+
+			/* Decorative "Tech Spec" Orange Top Bar */
+			.abstract-section::before {
+				content: "";
+				position: absolute;
+				top: 0;
+				left: 0;
+				right: 0;
+				height: 4px;
+				background: var(--accent-orange);
+			}
+
+			.abstract-section h2 {
+				text-align: left;
+				margin-top: 0;
+				font-size: 1.2rem;
+				text-transform: uppercase;
+				letter-spacing: 0.05em;
+				color: var(--secondary-text);
+				font-weight: 700;
+				margin-bottom: 20px;
+				display: flex;
+				align-items: center;
+				gap: 10px;
+			}
+
+			.abstract-section h2::after {
+				content: "";
+				flex-grow: 1;
+				height: 1px;
+				background: var(--grid-line);
+			}
+
+			.abstract-section p {
+				color: var(--secondary-text);
+				font-size: 1.05rem;
+				line-height: 1.75;
+			}
+
+			/* --- Method Section --- */
+			.method-section {
+				background-color: white;
+				padding: 30px;
+				border-radius: var(--radius-lg);
+				margin-bottom: 50px;
+				margin-left: auto;
+				margin-right: auto;
+				border: 1px solid var(--border-color);
+				box-shadow: var(--shadow-soft);
+				position: relative; /* For top bar */
+				overflow: hidden;
+			}
+
+			/* Decorative "Tech Spec" Orange Top Bar (Matched to Abstract) */
+			.method-section::before {
+				content: "";
+				position: absolute;
+				top: 0;
+				left: 0;
+				right: 0;
+				height: 4px;
+				background: var(--accent-orange);
+			}
+
+			.method-section h2 {
+				text-align: left;
+				margin-top: 0;
+				font-size: 1.2rem; /* Matched to Abstract */
+				text-transform: uppercase; /* Matched to Abstract */
+				letter-spacing: 0.05em; /* Matched to Abstract */
+				color: var(--secondary-text); /* Matched to Abstract */
+				font-weight: 700;
+				margin-bottom: 20px;
+				display: flex;
+				align-items: center;
+				gap: 10px;
+			}
+
+			.method-section h2::after {
+				content: "";
+				flex-grow: 1;
+				height: 1px;
+				background: var(--grid-line);
+			}
+
+			.method-section h2 + .method-figure,
+			.method-section h2 ~ h2 {
+				margin-top: 0;
+			}
+
+			.method-section h2:not(:first-of-type) {
+				margin-top: 40px;
+			}
+
+			.method-figure {
+				width: 100%;
+				height: auto; /* Allow image to define height */
+				margin-bottom: 30px;
+				/* Remove border and background for seamless integration */
+				overflow: hidden;
+			}
+
+			.method-img {
+				width: 100%;
+				height: auto;
+				display: block;
+			}
+
+			.method-text {
+				color: var(--secondary-text);
+				font-size: 1.05rem;
+				line-height: 1.75;
+				background: var(--terminal-bg);
+				padding: 20px;
+				border-radius: var(--radius-md);
+				border: 1px solid var(--border-color);
+			}
+
+			.method-text h3 {
+				margin-top: 0;
+				margin-bottom: 15px;
+				font-size: 1.1rem;
+				color: var(--primary-text);
+			}
+
+			/* Collapsible toggle for method descriptions */
+			.method-toggle-btn {
+				cursor: pointer;
+				display: inline-flex;
+				align-items: center;
+				gap: 10px;
+				padding: 10px 22px;
+				background: var(--terminal-bg);
+				border: 1px solid var(--border-color);
+				border-radius: var(--radius-md);
+				font-family: "Plus Jakarta Sans", sans-serif;
+				font-weight: 600;
+				font-size: 0.95rem;
+				color: var(--primary-text);
+				box-shadow: var(--shadow-soft);
+				transition: all 0.2s ease;
+				user-select: none;
+				margin-bottom: 0;
+			}
+
+			.method-toggle-btn::after {
+				content: "▾";
+				font-size: 0.75rem;
+				transition: transform 0.25s ease;
+			}
+
+			.method-toggle-btn[aria-expanded="true"]::after {
+				transform: rotate(-180deg);
+			}
+
+			.method-toggle-btn:hover {
+				background: var(--accent-orange);
+				color: white;
+				border-color: var(--accent-orange);
+				box-shadow: 0 4px 12px rgba(255, 87, 34, 0.3);
+			}
+
+			.method-collapsible {
+				overflow: hidden;
+				max-height: 0;
+				opacity: 0;
+				margin-top: 0;
+				margin-bottom: 0;
+				transition:
+					max-height 0.5s ease,
+					opacity 0.3s ease,
+					margin-top 0.4s ease,
+					margin-bottom 0.4s ease;
+			}
+
+			.method-toggle-btn[aria-expanded="true"] + .method-collapsible {
+				max-height: 5000px;
+				opacity: 1;
+				margin-top: 15px;
+				margin-bottom: 20px;
+			}
+
+			/* --- Results Section Styling --- */
+			.results-section {
+				margin-bottom: 50px; /* Reduced from 100px */
+			}
+
+			.section-title {
+				font-size: 1.5rem; /* Reduced from 1.8rem */
+				text-align: left;
+				font-weight: 700;
+				color: var(--primary-text);
+				margin-bottom: 15px; /* Reduced from 25px */
+				padding-bottom: 0; /* Removed padding for border */
+				border-bottom: none; /* Removed line to fit grid bg */
+				letter-spacing: -0.02em;
+				display: flex;
+				align-items: center;
+				gap: 15px;
+			}
+
+			/* Badge Styling for 90s */
+			.badge-long {
+				background-color: var(--primary-text);
+				color: white;
+				padding: 4px 10px;
+				border-radius: 4px;
+				font-size: 0.75rem;
+				font-family: "JetBrains Mono", monospace;
+				text-transform: uppercase;
+				letter-spacing: 0.05em;
+				vertical-align: middle;
+				margin-left: auto; /* Push to right */
+			}
+
+			/* --- Carousel Component --- */
+			.carousel-wrapper {
+				position: relative;
+				background: white;
+				border: 1px solid var(--border-color);
+				border-radius: var(--radius-lg);
+				padding: 10px; /* Reduced from 15px */
+				box-shadow: var(--shadow-lifted);
+			}
+
+			/* Grid Layout for Combined Baselines */
+			.combined-grid {
+				display: grid;
+				grid-template-columns: 1fr;
+				gap: 5px; /* Reduced from 10px */
+				margin-bottom: 0;
+			}
+
+			.baseline-group {
+				display: flex;
+				flex-direction: column;
+			}
+
+			.baseline-header {
+				display: none; /* Hide old header, we use labels */
+			}
+
+			.video-stack {
+				display: flex;
+				flex-direction: row;
+				gap: 10px; /* Reduced from 15px */
+				margin-bottom: 2px; /* Tighter */
+			}
+
+			/* The Viewport Container */
+			.video-container {
+				position: relative;
+				flex: 1 1 0; /* Equal share of the row regardless of count */
+				min-width: 0;
+				border-radius: var(--radius-md);
+				overflow: hidden;
+				background: #000;
+				border: 1px solid rgba(0, 0, 0, 0.1);
+				aspect-ratio: 16 / 9; /* Fix aspect ratio */
+				min-height: 150px; /* Fallback height */
+
+				/* Monitor Effect */
+				box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+			}
+
+			video {
+				position: absolute;
+				top: 50%;
+				left: 50%;
+				transform: translate(-50%, -50%);
+				width: 100.5%; /* Slight overlap to prevent gaps */
+				height: 100.5%;
+				object-fit: cover;
+				display: block;
+			}
+
+			/* Technical Label Styles */
+			.video-label {
+				position: absolute;
+				top: 12px;
+				left: 12px;
+				background: rgba(15, 23, 42, 0.9); /* Dark Slate */
+				color: white;
+				padding: 6px 12px;
+				border-radius: var(--radius-sm);
+				font-family: "JetBrains Mono", monospace;
+				font-size: 0.7rem;
+				font-weight: 500;
+				z-index: 2;
+				letter-spacing: 0.05em;
+				backdrop-filter: blur(4px);
+				border: 1px solid rgba(255, 255, 255, 0.1);
+			}
+
+			/* Custom Video Controls */
+			.custom-controls {
+				position: absolute;
+				bottom: 0;
+				left: 0;
+				right: 0;
+				background: linear-gradient(
+					to top,
+					rgba(0, 0, 0, 0.8),
+					rgba(0, 0, 0, 0)
+				);
+				padding: 10px 15px 15px; /* Added bottom padding */
+				display: flex;
+				align-items: center;
+				gap: 15px;
+				opacity: 0;
+				transition: opacity 0.3s ease;
+				z-index: 5;
+			}
+
+			.video-container:hover .custom-controls {
+				opacity: 1;
+			}
+
+			.play-pause-btn {
+				background: transparent;
+				border: none;
+				color: white;
+				font-size: 1rem;
+				cursor: pointer;
+				padding: 0;
+				width: 24px;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				opacity: 0.9;
+				transition: opacity 0.2s;
+			}
+
+			.play-pause-btn:hover {
+				opacity: 1;
+			}
+
+			.progress-bar-bg {
+				flex-grow: 1;
+				height: 4px; /* Thin line */
+				background: rgba(255, 255, 255, 0.3);
+				border-radius: 2px;
+				cursor: pointer;
+				position: relative;
+				transition: height 0.1s;
+			}
+
+			/* Make progress bar easier to hit on hover */
+			.progress-bar-bg:hover {
+				height: 6px;
+			}
+
+			.progress-bar-fill {
+				position: absolute;
+				top: 0;
+				left: 0;
+				height: 100%;
+				width: 0%;
+				background-color: #ff5722 !important; /* Force orange fill */
+				border-radius: 2px;
+				z-index: 2;
+			}
+
+			.progress-handle {
+				position: absolute;
+				top: 50%;
+				right: -6px; /* Center handle on end of fill */
+				width: 12px;
+				height: 12px;
+				background: white;
+				border-radius: 50%;
+				transform: translateY(-50%) scale(0);
+				transition: transform 0.1s;
+				box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+				z-index: 3;
+				pointer-events: none; /* Let clicks pass to bg */
+			}
+
+			.progress-bar-bg:hover .progress-handle {
+				transform: translateY(-50%) scale(1);
+			}
+
+			.progress-hover {
+				position: absolute;
+				top: 0;
+				left: 0;
+				height: 100%;
+				width: 0%;
+				background: rgba(255, 255, 255, 0.3);
+				border-radius: 2px;
+				z-index: 1;
+				pointer-events: none;
+			}
+
+			.time-tooltip {
+				position: absolute;
+				bottom: 15px;
+				left: 0;
+				transform: translateX(-50%);
+				background: rgba(0, 0, 0, 0.8);
+				color: white;
+				padding: 4px 8px;
+				border-radius: 4px;
+				font-size: 0.75rem;
+				font-family: "JetBrains Mono", monospace;
+				pointer-events: none;
+				opacity: 0;
+				transition: opacity 0.2s;
+				white-space: nowrap;
+			}
+
+			.progress-bar-bg:hover .time-tooltip {
+				opacity: 1;
+			}
+
+			/* TokenTrim Highlight Label */
+			.label-ours {
+				background: var(--accent-orange);
+				color: white;
+				font-weight: 700;
+				box-shadow: 0 4px 10px rgba(255, 87, 34, 0.4);
+				border: none;
+			}
+
+			/* --- Prompt Box (Terminal Style) --- */
+			.prompt-box {
+				font-family: "JetBrains Mono", monospace;
+				font-size: 0.85rem;
+				font-style: normal; /* Remove italic */
+				text-align: center; /* Keep centering per logic, but look like code */
+				color: var(--secondary-text);
+
+				background-color: var(--terminal-bg);
+				border: 1px solid var(--border-color);
+				padding: 8px 12px; /* Tighter padding */
+				border-radius: var(--radius-sm);
+				margin-bottom: 5px;
+
+				/* Add left accent */
+				border-left: 4px solid var(--accent-orange);
+
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				min-height: 2.5em; /* Reduced height */
+				line-height: 1.3;
+			}
+
+			/* Terminal "Prompt" Decoration */
+			.prompt-box::before {
+				content: ">";
+				color: var(--accent-orange);
+				margin-right: 8px; /* Tighter spacing */
+				font-weight: 700;
+			}
+
+			/* --- Controls Bar --- */
+			.controls-bar {
+				display: flex;
+				justify-content: center;
+				align-items: center;
+				gap: 16px; /* Reduced from 24px */
+				margin: 0; /* Removed margin */
+				padding: 4px;
+				border-top: 1px dashed var(--grid-line);
+				border-bottom: 1px dashed var(--grid-line);
+			}
+
+			.nav-btn {
+				position: static; /* Reset absolute */
+				background: white;
+				border: 1px solid var(--border-color);
+				color: var(--primary-text);
+				width: 40px;
+				height: 40px;
+				border-radius: 50%;
+				cursor: pointer;
+				font-size: 1.2rem;
+				transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				box-shadow: var(--shadow-soft);
+				flex-shrink: 0;
+			}
+
+			.nav-btn:hover {
+				background: var(--accent-orange);
+				color: white;
+				border-color: var(--accent-orange);
+				transform: translateY(-2px);
+				box-shadow: 0 5px 15px rgba(255, 87, 34, 0.3);
+			}
+
+			/* Remove old absolute classes if any remain, or just ignore them */
+			.nav-btn.prev,
+			.nav-btn.next {
+				left: auto;
+				right: auto;
+				transform: none;
+			}
+			.nav-btn.prev:hover,
+			.nav-btn.next:hover {
+				transform: translateY(-2px);
+			}
+
+			.dots {
+				display: flex;
+				gap: 8px;
+				align-items: center;
+			}
+
+			.dot {
+				width: 8px;
+				height: 8px;
+				border-radius: 4px; /* Pill radius */
+				background-color: var(--border-color);
+				cursor: pointer;
+				transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+			}
+
+			.dot.active {
+				background-color: var(--accent-orange);
+				width: 32px; /* Stretch into pill */
+			}
+
+			.dot:hover:not(.active) {
+				background-color: #94a3b8;
+			}
+
+			/* Footer */
+			footer {
+				text-align: center;
+				margin-top: 80px;
+				padding-top: 40px;
+				border-top: 1px solid var(--border-color);
+				color: var(--secondary-text);
+				font-size: 0.85rem;
+				font-family: "JetBrains Mono", monospace;
+			}
+
+			/* --- Responsive Tweaks --- */
+			@media (max-width: 900px) {
+				.nav-btn.prev {
+					left: 10px;
+				}
+				.nav-btn.next {
+					right: 10px;
+				}
+				.carousel-wrapper {
+					padding: 20px;
+				}
+			}
+
+			@media (max-width: 768px) {
+				h1 {
+					font-size: 2rem;
+				}
+				.video-stack {
+					flex-direction: column;
+				}
+				.video-container {
+					flex: 1 1 auto;
+					width: 100%;
+					margin-bottom: 10px;
+				}
+				.combined-grid {
+					gap: 30px;
+				}
+				.prompt-box {
+					font-size: 0.8rem;
+					text-align: left;
+					justify-content: flex-start;
+				}
+			}
+			/* --- Side-Label Row Layout (used by Autoregressive section) --- */
+			.layout-row-flowmo {
+				position: relative; /* Anchor for absolute label */
+				display: block; /* Default block layout */
+				margin-bottom: 20px;
+			}
+
+			.side-label-col {
+				position: absolute;
+				right: 100%; /* Push to the left of the container */
+				top: 50%;
+				transform: translateY(-50%);
+				width: 140px;
+				text-align: right;
+				border-right: 1px solid var(--grid-line);
+				padding-right: 20px;
+				margin-right: 20px; /* Gap between label and content */
+			}
+
+			.side-label-text {
+				font-size: 1rem;
+				font-weight: 700;
+				color: var(--primary-text);
+				line-height: 1.2;
+				display: block;
+			}
+
+			.content-col {
+				width: 100%; /* Ensure full width */
+			}
+
+			@media (max-width: 1599px) {
+				.layout-row-flowmo {
+					margin-bottom: 40px; /* More space when stacked */
+				}
+				.side-label-col {
+					position: relative;
+					right: auto;
+					top: auto;
+					transform: none;
+					width: 100%;
+					text-align: left;
+					border-right: none;
+					padding-right: 0;
+					margin-right: 0;
+					border-bottom: 1px solid var(--grid-line);
+					padding-bottom: 10px;
+					margin-bottom: 10px;
+				}
+			}
+		</style>
+	</head>
+	<body>
+		<button
+			class="hamburger-btn"
+			id="hamburger-btn"
+			aria-label="Toggle navigation"
+			aria-expanded="false">
+			<span></span>
+			<span></span>
+			<span></span>
+		</button>
+		<nav class="internal-nav">
+			<a href="#home" class="nav-link">Home</a>
+			<a href="#sec-abstract" class="nav-link">Abstract</a>
+			<a href="#sec-method" class="nav-link">Method</a>
+			<a href="#sec-wan" class="nav-link">Wan2.2-14B</a>
+			<a href="#sec-cogvideox" class="nav-link">CogVideoX-5B</a>
+			<a href="#sec-autoregressive" class="nav-link">Autoregressive</a>
+		</nav>
+		<div class="container">
+			<header id="home">
+				<h1>
+					CVG: Compositional Video Generation via Inference-Time
+					Guidance
+				</h1>
+				<div class="authors-container">
+					<div class="authors">
+						<span class="author-name">Ariel Shaulov<sup>1,*</sup></span>
+						<span class="author-name">Eitan Shaar<sup>2,*</sup></span>
+						<span class="author-name">Amit Edenzon<sup>3,*</sup></span>
+						<span class="author-name">Gal Chechik<sup>3</sup></span>
+						<span class="author-name">Lior Wolf<sup>1</sup></span>
+					</div>
+
+					<div class="affiliations">
+						<span class="affiliation"><sup>1</sup>Tel Aviv University</span>
+						<span class="affiliation"><sup>2</sup>Independent Researcher</span>
+						<span class="affiliation"><sup>3</sup>Bar-Ilan University</span>
+					</div>
+
+					<div class="affiliations">
+						<span class="affiliation"><sup>*</sup>Equal contribution</span>
+					</div>
+				</div>
+				<!-- <div class="links">
+					<a href="#" class="btn">Paper (PDF)</a>
+					<a href="#" class="btn">Code (GitHub)</a>
+					<a href="#" class="btn">BibTeX</a>
+				</div> -->
+			</header>
+			<section class="abstract-section" id="sec-abstract">
+				<h2>Abstract</h2>
+				<p>
+					Text-to-video diffusion models can generate visually
+					realistic and temporally coherent videos, but they often
+					fail on prompts that require fine-grained compositional
+					understanding. In such cases, models may generate plausible
+					videos while violating the intended relations between
+					entities, attributes, actions, or motion directions. We
+					hypothesize that this failure does not necessarily require
+					retraining the generator to correct, but can instead be
+					addressed by steering the denoising process using the
+					model's own internal grounding signals. In this paper, we
+					propose CVG, a simple inference-time guidance method for
+					improving compositional faithfulness in frozen text-to-video
+					diffusion models. Our key observation is that
+					cross-attention maps already encode where prompt concepts
+					are localized across space and time, and therefore provide a
+					useful signal for assessing whether a generated video
+					satisfies a given compositional constraint. We train a
+					lightweight classifier on cross-attention features to
+					predict compositional correctness, and use its gradients
+					during early denoising steps to guide the latent trajectory
+					toward the desired composition. By using cross-attention as
+					a differentiable control interface, CVG improves
+					compositional generation without modifying the model
+					architecture, fine-tuning the video generator, requiring
+					layout annotations, or adding user-supplied controls.
+					Experiments on compositional text-to-video benchmarks show
+					that our method improves prompt faithfulness while
+					preserving the visual quality of the underlying generator.
+				</p>
+			</section>
+			<section class="method-section" id="sec-method">
+				<h2>Training Method</h2>
+				<div class="method-figure">
+					<img
+						src="method/training.png"
+						alt="Training Method Figure"
+						class="method-img" />
+				</div>
+				<button
+					type="button"
+					class="method-toggle-btn"
+					aria-expanded="false"
+					aria-controls="text-training">
+					Show training description
+				</button>
+				<div class="method-collapsible" id="text-training">
+					<div class="method-text">
+					<p>
+						<b>The Training Phase</b><br />
+						<br /><b>(a)</b> Invert the video into the generator's
+						latent space and replay the denoising trajectory to
+						recover $\{z_t\}_{t \in \mathcal{T}}$. <br /><b>(b)</b>
+						At each $t \in \mathcal{T}$, extract cross-attention
+						maps $\{A_{t,\ell,h}^{(k)}\}$ for the
+						composition-relevant entity tokens $k \in
+						\mathcal{K}(p)$ across the chosen layers $\ell \in
+						\mathcal{L}$ and heads $h \in \mathcal{H}$ — withholding
+						the target relation token. <br /><b>(c)</b> These maps
+						are flattened, enriched with layer, head, and temporal
+						embeddings, and processed by a Transformer-based
+						aggregation module $\theta_{\mathrm{agg}}$ that produces
+						a per-step spatiotemporal volume $\hat{A}_t$. The full
+						representation is the concatenation across selected
+						steps: $$\phi(z_t, p) \;=\;
+						\mathrm{Concat}\!\left(\hat{A}_{t_1}, \hat{A}_{t_2},
+						\dots, \hat{A}_{t_{|\mathcal{T}|}}\right)$$
+						<b>(d)</b> $\phi(z_t, p)$ is fed into a frozen VLM with
+						a trainable classification head, producing: $\hat{y} =
+						C(\phi(z_t, p))$. <br /><b>(e)</b> To prevent
+						<b>composition leakage</b> — a shortcut in which the
+						classifier predicts the relation from textual traces of
+						the relation word in the attention maps rather than from
+						the spatiotemporal arrangement of grounded entities. we
+						use a video analogue of <b>dual inversion</b>. Each
+						training video is inverted twice: once with a prompt
+						$p^+$ containing the correct composition, and once with
+						a prompt $p^-$ containing an incorrect composition
+						sampled from $\mathcal{Y}$. Both representations
+						$\phi(z_t, p^+)$ and $\phi(z_t, p^-)$ are supervised
+						with the same ground-truth label $y$. <br /><b>(f)</b>
+						We optimize only $\theta_{\mathrm{agg}}$ and the head
+						parameters $(W, b)$ with both the generator and the VLM
+						frozen — by minimizing the dual cross-entropy loss:
+						$$\mathcal{L}_{CE} \;=\; -\log C\!\left(\phi(z_t,
+						p^+)\right)_y \;-\; \log C\!\left(\phi(z_t,
+						p^-)\right)_y$$
+						<b>
+							* Training data combines real videos with synthetic
+							videos.</b
+						>
+					</p>
+				</div>
+				</div>
+				<h2>Inference-Time-Optimization Method</h2>
+				<div class="method-figure">
+					<img
+						src="method/ito.png"
+						alt="ITO Method Figure"
+						class="method-img" />
+				</div>
+				<button
+					type="button"
+					class="method-toggle-btn"
+					aria-expanded="false"
+					aria-controls="text-ito">
+					Show ITO description
+				</button>
+				<div class="method-collapsible" id="text-ito">
+					<div class="method-text">
+					<p>
+						<b>Inference-Time Optimization Loop</b><br />
+						<br /><b>(a)</b> Given prompt $p$ and target relation
+						$y$, identify the composition-relevant entity tokens
+						$\mathcal{K}(p)$. At each guided denoising step $t \in
+						\mathcal{T}$, run the generator's attention layers on
+						the current latent $z_t$ and collect the cross-attention
+						maps $\{A_{t,\ell,h}^{(k)} : \ell \in \mathcal{L}, h \in
+						\mathcal{H}, k \in \mathcal{K}(p)\}$ — the same
+						$\mathcal{L}, \mathcal{H}, \mathcal{T}$ used at
+						training. <br /><b>(b)</b> Pass these maps through the
+						aggregation module $\theta_{\mathrm{agg}}$ to obtain
+						$\phi(z_t, p)$, then through the frozen VLM with the
+						pretrained classification head to obtain a score vector
+						over $\mathcal{Y}$: $$s_t \;=\; C(\phi(z_t, p)) \;\in\;
+						\Delta^{|\mathcal{Y}|}.$$<b>(c)</b> Define the
+						inference-time composition loss as the cross-entropy
+						against the target: $$\mathcal{L}_{\mathrm{comp}}(z_t,
+						p, y) \;=\; -\log s_t[y].$$<b>(d)</b> Update the latent
+						by backpropagating through the classifier and the
+						generator's cross-attention computation: $$z_t' \;=\;
+						z_t - \eta_t \nabla_{z_t}
+						\mathcal{L}_{\mathrm{comp}}(z_t, p, y),$$ where $\eta_t$
+						is the guidance step size. <br /><b>(e)</b> Although the
+						generator and VLM are frozen, gradients flow through
+						their computations because $z_t$ is the input that
+						produces $\mathcal{S}_t(p) = \{A_{t,\ell,h}^{(k)}\}$. By
+						the chain rule: $$\nabla_{z_t}
+						\mathcal{L}_{\mathrm{comp}} \;=\;
+						\underbrace{\frac{\partial
+						\mathcal{L}_{\mathrm{comp}}}{\partial
+						C}}_{\text{cross-entropy}} \cdot
+						\underbrace{\frac{\partial C}{\partial
+						\phi}}_{\text{head} \,+\, \text{VLM}} \cdot
+						\underbrace{\frac{\partial \phi}{\partial
+						\mathcal{S}_t(p)}}_{\text{aggregation }
+						\theta_{\mathrm{agg}}} \cdot \underbrace{\frac{\partial
+						\mathcal{S}_t(p)}{\partial z_t}}_{\text{generator's }
+						\text{attention}}$$
+							<b>*</b> Guidance is applied
+						<b>only during the first denoising steps</b>, where the
+						coarse motion and spatial structure of the video are
+						formed.<br/> The remaining steps are left to refine
+						appearance and texture without compositional
+						perturbation.</b>
+					</p>
+				</div>
+				</div>
+			</section>
+			<section class="results-section" id="sec-wan">
+				<h2 class="section-title">Wan2.2-14B</h2>
+
+				<div class="carousel-wrapper" id="carousel-wan">
+					<div class="combined-grid">
+						<div class="baseline-group">
+							<div class="video-stack">
+								<div class="video-container">
+									<div class="video-label">Baseline</div>
+									<video
+										id="vid-wan-base"
+										playsinline
+										loop
+										muted
+										autoplay></video>
+									<div class="custom-controls">
+										<button
+											class="play-pause-btn"
+											data-target="vid-wan-base">
+											❚❚
+										</button>
+										<div
+											class="progress-bar-bg"
+											data-target="vid-wan-base">
+											<div class="progress-hover"></div>
+											<div class="progress-bar-fill">
+												<div
+													class="progress-handle"></div>
+											</div>
+											<div class="time-tooltip">
+												00:00
+											</div>
+										</div>
+									</div>
+								</div>
+								<div class="video-container">
+									<div class="video-label">+ TTOM</div>
+									<video
+										id="vid-wan-ttom"
+										playsinline
+										loop
+										muted
+										autoplay></video>
+									<div class="custom-controls">
+										<button
+											class="play-pause-btn"
+											data-target="vid-wan-ttom">
+											❚❚
+										</button>
+										<div
+											class="progress-bar-bg"
+											data-target="vid-wan-ttom">
+											<div class="progress-hover"></div>
+											<div class="progress-bar-fill">
+												<div
+													class="progress-handle"></div>
+											</div>
+											<div class="time-tooltip">
+												00:00
+											</div>
+										</div>
+									</div>
+								</div>
+								<div class="video-container">
+									<div class="video-label label-ours">
+										+ CVG
+									</div>
+									<video
+										id="vid-wan-ours"
+										playsinline
+										loop
+										muted
+										autoplay></video>
+									<div class="custom-controls">
+										<button
+											class="play-pause-btn"
+											data-target="vid-wan-ours">
+											❚❚
+										</button>
+										<div
+											class="progress-bar-bg"
+											data-target="vid-wan-ours">
+											<div class="progress-hover"></div>
+											<div class="progress-bar-fill">
+												<div
+													class="progress-handle"></div>
+											</div>
+											<div class="time-tooltip">
+												00:00
+											</div>
+										</div>
+									</div>
+								</div>
+							</div>
+							<div class="prompt-box" id="prompt-wan">
+								Loading prompt...
+							</div>
+						</div>
+
+						<!-- Controls Bar -->
+						<div class="controls-bar">
+							<button
+								class="nav-btn prev"
+								onclick="changeSlide('wan', -1)">
+								&#10094;
+							</button>
+							<div class="dots" id="dots-wan"></div>
+							<button
+								class="nav-btn next"
+								onclick="changeSlide('wan', 1)">
+								&#10095;
+							</button>
+						</div>
+					</div>
+				</div>
+			</section>
+
+			<section class="results-section" id="sec-cogvideox">
+				<h2 class="section-title">CogVideoX-5B</h2>
+
+				<div class="carousel-wrapper" id="carousel-cogvideox">
+					<div class="combined-grid">
+						<div class="baseline-group">
+							<div class="video-stack">
+								<div class="video-container">
+									<div class="video-label">Baseline</div>
+									<video
+										id="vid-cogvideox-base"
+										playsinline
+										loop
+										muted
+										autoplay></video>
+									<div class="custom-controls">
+										<button
+											class="play-pause-btn"
+											data-target="vid-cogvideox-base">
+											❚❚
+										</button>
+										<div
+											class="progress-bar-bg"
+											data-target="vid-cogvideox-base">
+											<div class="progress-hover"></div>
+											<div class="progress-bar-fill">
+												<div
+													class="progress-handle"></div>
+											</div>
+											<div class="time-tooltip">
+												00:00
+											</div>
+										</div>
+									</div>
+								</div>
+								<div class="video-container">
+									<div class="video-label">+ TTOM</div>
+									<video
+										id="vid-cogvideox-ttom"
+										playsinline
+										loop
+										muted
+										autoplay></video>
+									<div class="custom-controls">
+										<button
+											class="play-pause-btn"
+											data-target="vid-cogvideox-ttom">
+											❚❚
+										</button>
+										<div
+											class="progress-bar-bg"
+											data-target="vid-cogvideox-ttom">
+											<div class="progress-hover"></div>
+											<div class="progress-bar-fill">
+												<div
+													class="progress-handle"></div>
+											</div>
+											<div class="time-tooltip">
+												00:00
+											</div>
+										</div>
+									</div>
+								</div>
+								<div class="video-container">
+									<div class="video-label label-ours">
+										+ CVG
+									</div>
+									<video
+										id="vid-cogvideox-ours"
+										playsinline
+										loop
+										muted
+										autoplay></video>
+									<div class="custom-controls">
+										<button
+											class="play-pause-btn"
+											data-target="vid-cogvideox-ours">
+											❚❚
+										</button>
+										<div
+											class="progress-bar-bg"
+											data-target="vid-cogvideox-ours">
+											<div class="progress-hover"></div>
+											<div class="progress-bar-fill">
+												<div
+													class="progress-handle"></div>
+											</div>
+											<div class="time-tooltip">
+												00:00
+											</div>
+										</div>
+									</div>
+								</div>
+							</div>
+							<div class="prompt-box" id="prompt-cogvideox">
+								Loading prompt...
+							</div>
+						</div>
+
+						<!-- Controls Bar -->
+						<div class="controls-bar">
+							<button
+								class="nav-btn prev"
+								onclick="changeSlide('cogvideox', -1)">
+								&#10094;
+							</button>
+							<div class="dots" id="dots-cogvideox"></div>
+							<button
+								class="nav-btn next"
+								onclick="changeSlide('cogvideox', 1)">
+								&#10095;
+							</button>
+						</div>
+					</div>
+				</div>
+			</section>
+
+			<section class="results-section" id="sec-autoregressive">
+				<h2 class="section-title">Autoregressive Video Generation</h2>
+				<div class="carousel-wrapper" id="carousel-autoregressive">
+					<div class="combined-grid">
+						<div class="baseline-group">
+							<div class="layout-row-flowmo">
+								<div class="side-label-col">
+									<span class="side-label-text"
+										>Wan2.2-14B</span
+									>
+								</div>
+								<div class="content-col">
+									<div class="video-stack">
+										<div class="video-container">
+											<div class="video-label">
+												Rolling Forcing
+											</div>
+											<video
+												id="vid-ar-wan-base"
+												playsinline
+												loop
+												muted
+												autoplay></video>
+											<div class="custom-controls">
+												<button
+													class="play-pause-btn"
+													data-target="vid-ar-wan-base">
+													❚❚
+												</button>
+												<div
+													class="progress-bar-bg"
+													data-target="vid-ar-wan-base">
+													<div
+														class="progress-hover"></div>
+													<div
+														class="progress-bar-fill">
+														<div
+															class="progress-handle"></div>
+													</div>
+													<div class="time-tooltip">
+														00:00
+													</div>
+												</div>
+											</div>
+										</div>
+										<div class="video-container">
+											<div class="video-label">
+												+ TTOM
+											</div>
+											<video
+												id="vid-ar-wan-ttom"
+												playsinline
+												loop
+												muted
+												autoplay></video>
+											<div class="custom-controls">
+												<button
+													class="play-pause-btn"
+													data-target="vid-ar-wan-ttom">
+													❚❚
+												</button>
+												<div
+													class="progress-bar-bg"
+													data-target="vid-ar-wan-ttom">
+													<div
+														class="progress-hover"></div>
+													<div
+														class="progress-bar-fill">
+														<div
+															class="progress-handle"></div>
+													</div>
+													<div class="time-tooltip">
+														00:00
+													</div>
+												</div>
+											</div>
+										</div>
+										<div class="video-container">
+											<div class="video-label label-ours">
+												+ CVG
+											</div>
+											<video
+												id="vid-ar-wan-ours"
+												playsinline
+												loop
+												muted
+												autoplay></video>
+											<div class="custom-controls">
+												<button
+													class="play-pause-btn"
+													data-target="vid-ar-wan-ours">
+													❚❚
+												</button>
+												<div
+													class="progress-bar-bg"
+													data-target="vid-ar-wan-ours">
+													<div
+														class="progress-hover"></div>
+													<div
+														class="progress-bar-fill">
+														<div
+															class="progress-handle"></div>
+													</div>
+													<div class="time-tooltip">
+														00:00
+													</div>
+												</div>
+											</div>
+										</div>
+									</div>
+									<div class="prompt-box" id="prompt-ar-wan">
+										Loading prompt...
+									</div>
+								</div>
+							</div>
+						</div>
+
+						<!-- Controls Bar -->
+						<div class="controls-bar">
+							<button
+								class="nav-btn prev"
+								onclick="changeSlide('autoregressive', -1)">
+								&#10094;
+							</button>
+							<div class="dots" id="dots-autoregressive"></div>
+							<button
+								class="nav-btn next"
+								onclick="changeSlide('autoregressive', 1)">
+								&#10095;
+							</button>
+						</div>
+					</div>
+				</div>
+			</section>
+
+			<footer>
+				<p>&copy; 2026 CVG Project Page.</p>
+			</footer>
+		</div>
+
+		<script>
+			// --- Data Configuration ---
+			//
+			// Each row has a list of `items`. Every item is `{ name, prompt }`.
+			//   - `name`: the video filename (without `.mp4`). The same name is
+			//     reused across the three subfolders (baseline / TTOM / ours).
+			//   - `prompt`: text shown below the trio.
+			//
+			// To reorder a row, just rearrange its `items` array. To swap one
+			// clip for another, edit a single `name` string. The folders are
+			// always `baseline`, `TTOM`, and `ours` under `basePath`.
+
+			const rowData = {
+				wan: {
+					basePath: "wan",
+					items: [
+						{
+							name: "seed1_a_rabbit_jumps_on_top_of_the_turtle",
+							prompt: "A rabbit jumps on top of the turtle.",
+						},
+						{
+							name: "seed1_a_rabbit_swim_right_to_a_turtle",
+							prompt: "A rabbit swims right to a turtle.",
+						},
+						{
+							name: "seed1_Child_gives_water_to_a_thirsty_bird.",
+							prompt: "A child gives water to a thirsty bird.",
+						},
+						{
+							name: "seed1_three_boats_moving_on_a_calm_river",
+							prompt: "Three boats moving on a calm river.",
+						},
+						{
+							name: "seed2_a_bird_stops_behind_the_tree",
+							prompt: "A bird stops behind the tree.",
+						},
+						{
+							name: "seed3_a_deer_jumps_away_from_the_fox",
+							prompt: "A deer jumps away from the fox.",
+						},
+						{
+							name: "seed4_a_boy_walks_in_front_of_the_horse",
+							prompt: "A boy walks in front of the horse.",
+						},
+						{
+							name: "seed5_four_apples_lying_on_a_kitchen_counter",
+							prompt: "Four apples lying on a kitchen counter.",
+						},
+					],
+				},
+				cogvideox: {
+					basePath: "cogvideox",
+					items: [
+						{
+							name: "seed1_a_brown_deer_walks_behind_a_large_rock_in_a_forest",
+							prompt: "A brown deer walks behind a large rock in a forest.",
+						},
+						{
+							name: "seed1_a_cat_lies_to_the_right_of_the_chair",
+							prompt: "A cat lies to the right of the chair.",
+						},
+						{
+							name: "seed1_a_small_gray_robot_rolls_toward_a_red_cone_in_a_wa",
+							prompt: "A small gray robot rolls toward a red cone in a warehouse.",
+						},
+						{
+							name: "seed1_a_small_orange_crab_crawls_beneath_a_piece_of_drif",
+							prompt: "A small orange crab crawls beneath a piece of driftwood.",
+						},
+						{
+							name: "seed1_a_small_white_goat_walks_between_two_wooden_barrel",
+							prompt: "A small white goat walks between two wooden barrels.",
+						},
+						{
+							name: "seed1_two_red_balloons_floating_above_a_wooden_table",
+							prompt: "Two red balloons floating above a wooden table.",
+						},
+						{
+							name: "seed2_a_black_cat_jumps_over_a_low_fence_in_a_backyard,_",
+							prompt: "A black cat jumps over a low fence in a backyard.",
+						},
+						{
+							name: "seed2_a_small_green_frog_jumps_in_between_two_rock",
+							prompt: "A small green frog jumps in between two rocks.",
+						},
+						{
+							name: "seed3_a_white_duck_swims_to_the_right_of_a_fallen_branch_and_then_behind",
+							prompt: "A white duck swims to the right of a fallen branch and then behind.",
+						},
+					],
+				},
+				"ar-wan": {
+					basePath: "autoregressive/RollingForcing",
+					items: [
+						{
+							name: "a_brown_dog_walks to the right of a cat",
+							prompt: "A brown dog walks to the right of a cat.",
+						},
+						{
+							name: "a_brown_owl_flies_behind_a_tree_trunk_at_dusk,_then_another_owl_fly_to_ the left of the current owl and then goes behind him",
+							prompt: "A brown owl flies behind a tree trunk at dusk, then another owl flies to the left of the current owl and then goes behind him.",
+						},
+						{
+							name: "a_golden_dog_plays_with_two_red_balls_in_the_yard",
+							prompt: "A golden dog plays with two red balls in the yard.",
+						},
+						{
+							name: "a_gray_rabbit_hops_toward_a_fallen_log_on_a_forest_floor,_then_jumps_above_it,turning to the right and then to the left",
+							prompt: "A gray rabbit hops toward a fallen log on a forest floor, then jumps above it, turning to the right and then to the left.",
+						},
+						{
+							name: "a_gray_seal_slides_across_and two penguins play in the ice_ema",
+							prompt: "A gray seal slides across and two penguins play in the ice.",
+						},
+						{
+							name: "one_duck_flies_above_a_calm_lake_with_three_swans",
+							prompt: "One duck flies above a calm lake with three swans.",
+						},
+					],
+				},
+			};
+
+			// Each carousel groups one or more rows that advance together.
+			const carousels = {
+				wan: { rows: ["wan"] },
+				cogvideox: { rows: ["cogvideox"] },
+				autoregressive: { rows: ["ar-wan"] },
+			};
+
+			// Order in which trio variants appear (left -> right) and the
+			// folder name each one maps to under `basePath`.
+			const trioVariants = [
+				{ slot: "base", folder: "baseline" },
+				{ slot: "ttom", folder: "TTOM" },
+				{ slot: "ours", folder: "ours" },
+			];
+
+			const carouselStates = {
+				wan: { index: 0 },
+				cogvideox: { index: 0 },
+				autoregressive: { index: 0 },
+			};
+
+			// --- Logic ---
+
+			function carouselCount(carouselId) {
+				const rows = carousels[carouselId].rows;
+				return Math.min(...rows.map((r) => rowData[r].items.length));
+			}
+
+			function initDots(carouselId) {
+				const dotsContainer = document.getElementById(
+					`dots-${carouselId}`,
+				);
+				if (!dotsContainer) return;
+
+				dotsContainer.innerHTML = "";
+				const count = carouselCount(carouselId);
+
+				for (let i = 0; i < count; i++) {
+					const dot = document.createElement("div");
+					dot.className = "dot";
+					dot.onclick = () => jumpToSlide(carouselId, i);
+					dotsContainer.appendChild(dot);
+				}
+			}
+
+			function updateRow(rowId, index) {
+				const data = rowData[rowId];
+				const item = data.items[index];
+				if (!item) return;
+
+				trioVariants.forEach(({ slot, folder }) => {
+					const vid = document.getElementById(`vid-${rowId}-${slot}`);
+					if (!vid) return;
+					const src = `${data.basePath}/${folder}/${item.name}.mp4`;
+					if (vid.getAttribute("src") !== src) {
+						vid.src = src;
+						vid.play().catch(() => {});
+					}
+				});
+
+				const promptEl = document.getElementById(`prompt-${rowId}`);
+				if (promptEl) promptEl.textContent = item.prompt;
+			}
+
+			function updateCarouselUI(carouselId) {
+				const idx = carouselStates[carouselId].index;
+				carousels[carouselId].rows.forEach((rowId) =>
+					updateRow(rowId, idx),
+				);
+
+				const dotsContainer = document.getElementById(
+					`dots-${carouselId}`,
+				);
+				if (dotsContainer) {
+					const dots = dotsContainer.getElementsByClassName("dot");
+					for (let i = 0; i < dots.length; i++) {
+						dots[i].classList.toggle("active", i === idx);
+					}
+				}
+			}
+
+			function changeSlide(carouselId, direction) {
+				const state = carouselStates[carouselId];
+				const count = carouselCount(carouselId);
+				state.index = (state.index + direction + count) % count;
+				updateCarouselUI(carouselId);
+			}
+
+			function jumpToSlide(carouselId, index) {
+				carouselStates[carouselId].index = index;
+				updateCarouselUI(carouselId);
+			}
+
+			// Initialize all carousels on load
+			document.addEventListener("DOMContentLoaded", () => {
+				Object.keys(carouselStates).forEach((id) => {
+					initDots(id);
+					updateCarouselUI(id);
+				});
+
+				// Initialize custom video controls
+				const allVideoContainers =
+					document.querySelectorAll(".video-container");
+
+				allVideoContainers.forEach((container) => {
+					const video = container.querySelector("video");
+					const playBtn = container.querySelector(".play-pause-btn");
+					const progressBarBg =
+						container.querySelector(".progress-bar-bg");
+					const progressBarFill =
+						container.querySelector(".progress-bar-fill");
+
+					if (
+						!video ||
+						!playBtn ||
+						!progressBarBg ||
+						!progressBarFill
+					)
+						return;
+
+					// Use the natural video duration; fall back to 30s while
+					// metadata is still loading.
+					const getLimit = () =>
+						isFinite(video.duration) && video.duration > 0
+							? video.duration
+							: 30;
+
+					// Play/Pause Toggle
+					playBtn.addEventListener("click", (e) => {
+						e.stopPropagation();
+						if (video.paused) {
+							video.play();
+						} else {
+							video.pause();
+						}
+					});
+
+					// Update Play/Pause Icon
+					video.addEventListener("play", () => {
+						playBtn.innerHTML = "&#10074;&#10074;";
+					});
+					video.addEventListener("pause", () => {
+						playBtn.innerHTML = "&#9654;";
+					});
+
+					// Update Progress Bar
+					video.addEventListener("timeupdate", () => {
+						const limit = getLimit();
+						const percentage = (video.currentTime / limit) * 100;
+						progressBarFill.style.width = `${Math.min(percentage, 100)}%`;
+					});
+
+					// Scrubbing
+					progressBarBg.addEventListener("click", (e) => {
+						const rect = progressBarBg.getBoundingClientRect();
+						const offsetX = e.clientX - rect.left;
+						const percentage = offsetX / rect.width;
+						video.currentTime = percentage * getLimit();
+					});
+
+					// Hover Effects (Tooltip & Ghost Bar)
+					progressBarBg.addEventListener("mousemove", (e) => {
+						const rect = progressBarBg.getBoundingClientRect();
+						const offsetX = e.clientX - rect.left;
+						const percentage = Math.max(
+							0,
+							Math.min(1, offsetX / rect.width),
+						);
+
+						const hoverBar =
+							progressBarBg.querySelector(".progress-hover");
+						if (hoverBar)
+							hoverBar.style.width = `${percentage * 100}%`;
+
+						const tooltip =
+							progressBarBg.querySelector(".time-tooltip");
+						if (tooltip) {
+							const time = percentage * getLimit();
+							const mins = Math.floor(time / 60);
+							const secs = Math.floor(time % 60)
+								.toString()
+								.padStart(2, "0");
+							tooltip.textContent = `${mins}:${secs}`;
+							tooltip.style.left = `${percentage * 100}%`;
+						}
+					});
+
+					// Reset Hover on Leave
+					progressBarBg.addEventListener("mouseleave", () => {
+						const hoverBar =
+							progressBarBg.querySelector(".progress-hover");
+						if (hoverBar) hoverBar.style.width = "0%";
+					});
+				});
+
+				// --- Hamburger Menu Toggle ---
+				const hamburgerBtn = document.getElementById("hamburger-btn");
+				if (hamburgerBtn) {
+					hamburgerBtn.addEventListener("click", () => {
+						const isOpen =
+							document.body.classList.toggle("nav-open");
+						hamburgerBtn.setAttribute(
+							"aria-expanded",
+							isOpen ? "true" : "false",
+						);
+					});
+
+					document
+						.querySelectorAll(".internal-nav .nav-link")
+						.forEach((link) => {
+							link.addEventListener("click", () => {
+								document.body.classList.remove("nav-open");
+								hamburgerBtn.setAttribute(
+									"aria-expanded",
+									"false",
+								);
+							});
+						});
+				}
+
+				// --- Method Description Toggles ---
+				document
+					.querySelectorAll(".method-toggle-btn")
+					.forEach((btn) => {
+						btn.addEventListener("click", () => {
+							const expanded =
+								btn.getAttribute("aria-expanded") === "true";
+							btn.setAttribute(
+								"aria-expanded",
+								expanded ? "false" : "true",
+							);
+						});
+					});
+			});
+		</script>
+	</body>
+</html>
